@@ -5,11 +5,13 @@
 
 enum {
   TK_NUM = 256,
+  TK_IDENT,
   TK_EOF,
 };
 
 enum {
   ND_NUM = 256,  // integer type
+  ND_IDENT,
 };
 
 typedef struct {
@@ -23,9 +25,11 @@ typedef struct Node {
   struct Node *lhs;  // left term
   struct Node *rhs;  // right term
   int val;
+  char name;
 } Node;
 
 Token tokens[100];
+Node *code[100];
 int pos = 0;
 
 // Protype
@@ -87,9 +91,37 @@ Node *expr() {
   return lhs;
 }
 
+void gen_lval(Node *node) {
+  if (node->ty == ND_IDENT) {
+    printf("    mov rax, rbp\n");
+    printf("    sub rax, %d\n", ('z' - node->name + 1) * 8);
+    printf("    push rax\n");
+    return;
+  }
+}
+
 void gen(Node *node) {
   if (node->ty == ND_NUM) {
     printf("    push %d\n", node->val);
+    return;
+  }
+
+  if (node->ty == ND_IDENT) {
+    gen_lval(node);
+    printf("  pop rax\n");
+    printf("  mov rax, [rax]\n");
+    printf("  push rax\n");
+    return;
+  }
+
+  if (node->ty == '=') {
+    gen_lval(node->lhs);
+    gen(node->rhs);
+
+    printf("  pop rdi\n");
+    printf("  pop rax\n");
+    printf("  mov [rax], rdi\n");
+    printf("  push rdi\n");
     return;
   }
 
@@ -128,6 +160,14 @@ void tokenize(char *p) {
     if (*p == '+' || *p == '-' || *p == '*' || *p == '/' || *p == '(' ||
         *p == ')') {
       tokens[i].ty = *p;
+      tokens[i].input = p;
+      i++;
+      p++;
+      continue;
+    }
+
+    if ('a' <= *p && *p <= 'z') {
+      tokens[i].ty = TK_IDENT;
       tokens[i].input = p;
       i++;
       p++;
