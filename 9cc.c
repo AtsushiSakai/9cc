@@ -8,13 +8,113 @@ enum {
   TK_EOF,
 };
 
+enum {
+  ND_NUM = 256,  // integer type
+};
+
 typedef struct {
   int ty;       // token type
   int val;      // token value
   char *input;  // message
 } Token;
 
+typedef struct Node {
+  int ty;            // token type
+  struct Node *lhs;  // left term
+  struct Node *rhs;  // right term
+  int val;
+} Node;
+
 Token tokens[100];
+int pos = 0;
+
+// Protype
+Node *expr();
+
+Node *new_node(int ty, Node *lhs, Node *rhs) {
+  Node *node = malloc(sizeof(Node));
+  node->ty = ty;
+  node->lhs = lhs;
+  node->rhs = rhs;
+  return node;
+}
+
+Node *new_node_num(int val) {
+  Node *node = malloc(sizeof(Node));
+  node->ty = ND_NUM;
+  node->val = val;
+  return node;
+}
+
+Node *term() {
+  if (tokens[pos].ty == TK_NUM) return new_node_num(tokens[pos++].val);
+
+  if (tokens[pos].ty == '(') {
+    pos++;
+    Node *node = expr();
+    pos++;
+    return node;
+  }
+
+  Node *node = expr();
+  return node;
+}
+
+Node *mul() {
+  Node *lhs = term();
+  if (tokens[pos].ty == '*') {
+    pos++;
+    return new_node('*', lhs, mul());
+  }
+  if (tokens[pos].ty == '/') {
+    pos++;
+    return new_node('/', lhs, mul());
+  }
+
+  return lhs;
+}
+
+Node *expr() {
+  Node *lhs = mul();
+  if (tokens[pos].ty == '+') {
+    pos++;
+    return new_node('+', lhs, expr());
+  }
+  if (tokens[pos].ty == '-') {
+    pos++;
+    return new_node('-', lhs, expr());
+  }
+  return lhs;
+}
+
+void gen(Node *node) {
+  if (node->ty == ND_NUM) {
+    printf("    push %d\n", node->val);
+    return;
+  }
+
+  gen(node->lhs);
+  gen(node->rhs);
+  printf("  pop rdi\n");
+  printf("  pop rax\n");
+
+  switch (node->ty) {
+    case '+':
+      printf("  add rax, rdi\n");
+      break;
+    case '-':
+      printf("  sub rax, rdi\n");
+      break;
+    case '*':
+      printf("  mul rdi\n");
+      break;
+    case '/':
+      printf("  mov rdx, 0\n");
+      printf("  div rdi\n");
+  }
+
+  printf("  push rax\n");
+}
 
 void tokenize(char *p) {
   int i = 0;
@@ -25,7 +125,8 @@ void tokenize(char *p) {
       continue;
     }
 
-    if (*p == '+' || *p == '-') {
+    if (*p == '+' || *p == '-' || *p == '*' || *p == '/' || *p == '(' ||
+        *p == ')') {
       tokens[i].ty = *p;
       tokens[i].input = p;
       i++;
@@ -61,33 +162,15 @@ int main(int argc, char **argv) {
   }
 
   tokenize(argv[1]);
+  Node *node = expr();
 
   printf(".intel_syntax noprefix\n");
   printf(".global _main\n");
   printf("_main:\n");
-  if (tokens[0].ty != TK_NUM) error(0);
-  printf("    mov rax, %d\n", tokens[0].val);
 
-  int i = 1;
-  while (tokens[i].ty != TK_EOF) {
-    if (tokens[i].ty == '+') {
-      i++;
-      if (tokens[i].ty != TK_NUM) error(i);
-      printf("    add rax, %d\n", tokens[i].val);
-      i++;
-      continue;
-    }
-    if (tokens[i].ty == '-') {
-      i++;
-      if (tokens[i].ty != TK_NUM) error(i);
-      printf("    sub rax, %d\n", tokens[i].val);
-      i++;
-      continue;
-    }
+  gen(node);
 
-    error(i);
-  }
-
+  printf("    pop rax\n");
   printf("    ret\n");
   return 0;
 }
